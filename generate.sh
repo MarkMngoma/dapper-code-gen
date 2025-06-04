@@ -8,7 +8,7 @@ convert_to_pascal_case() {
     echo "$1" | awk -F'_' '{ for (i=1; i<=NF; i++) printf toupper(substr($i,1,1)) tolower(substr($i,2)) }'
 }
 
-CONFIG_FILE="Server/Src/Main/Infrastructure/Configuration/application.Development.json"
+CONFIG_FILE="Server/Infrastructure/Configuration/application.Development.json"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "Error: Configuration file $CONFIG_FILE not found."
     exit 1
