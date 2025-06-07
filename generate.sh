@@ -4,7 +4,7 @@ OS=$(uname -s)
 DEFAULT_OUTPUT_DIR="Server/Main/Reactor/Builders/Tables/Generated"
 DTO_OUTPUT_DIR="$DEFAULT_OUTPUT_DIR/Models"
 SCHEMA_DIR="Server/Main/Reactor/Builders/Tables/Schemas"
-CONFIG_FILE="Server/Infrastructure/Configuration/application.Development.json"
+CONFIG_FILE="Server/Infrastructure/Configuration/config.development.yaml"
 DB_CONTAINER="testcontainers-db-1"
 
 mkdir -p "$DTO_OUTPUT_DIR"
@@ -100,34 +100,42 @@ generate_poco_dto() {
     echo "DTO file created: $DTO_FILE"
 }
 
+# ------------------------------
+# Read from YAML instead of JSON
+# ------------------------------
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "Error: Configuration file $CONFIG_FILE not found."
     exit 1
 fi
 
-DB_CONNECTION=$(jq -r '.ConnectionStrings.FinanceDatabase' "$CONFIG_FILE")
+# Requires yq: https://github.com/mikefarah/yq
+if ! command -v yq &> /dev/null; then
+    echo "Error: 'yq' is required but not installed. Install via 'brew install yq' or 'sudo snap install yq'"
+    exit 1
+fi
+
+DB_CONNECTION=$(yq e '.ConnectionStrings.FinanceDatabase' "$CONFIG_FILE")
 
 if [ -z "$DB_CONNECTION" ]; then
     echo "Error: DB_CONNECTION not found in $CONFIG_FILE."
     exit 1
 fi
 
-if [[ "$OS" == "Darwin" ]]; then
-    DB_USER=$(echo "$DB_CONNECTION" | sed -n 's/.*User=\([^;]*\).*/\1/p')
-    DB_PASS=$(echo "$DB_CONNECTION" | sed -n 's/.*Password=\([^;]*\).*/\1/p')
-    DB_NAME=$(echo "$DB_CONNECTION" | sed -n 's/.*Database=\([^;]*\).*/\1/p')
-else
-    DB_USER=$(echo "$DB_CONNECTION" | grep -oP '(?<=User=)[^;]+')
-    DB_PASS=$(echo "$DB_CONNECTION" | grep -oP '(?<=Password=)[^;]+')
-    DB_NAME=$(echo "$DB_CONNECTION" | grep -oP '(?<=Database=)[^;]+')
-fi
+# Extract values from connection string (works for format: "Server=...;Database=...;User=...;Password=...;")
+DB_USER=$(echo "$DB_CONNECTION" | sed -n 's/.*User=\([^;]*\).*/\1/p')
+DB_PASS=$(echo "$DB_CONNECTION" | sed -n 's/.*Password=\([^;]*\).*/\1/p')
+DB_NAME=$(echo "$DB_CONNECTION" | sed -n 's/.*Database=\([^;]*\).*/\1/p')
 
+# Validate DB connection
 run_mariadb -e "exit"
 if [ $? -ne 0 ]; then
     echo "Error: Unable to connect to MariaDB container."
     exit 1
 fi
 
+# ------------------------------
+# Generate classes and DTOs
+# ------------------------------
 echo "Fetching table list from the database..."
 TABLES=$(run_mariadb -se "SHOW TABLES;" | grep -vE '_SEQ$')
 
@@ -207,6 +215,5 @@ for TABLE in $SELECTED_TABLES; do
 
     echo "Class file created: $CLASS_FILE"
 
-    # --- Generate DTO ---
     generate_poco_dto "$TABLE"
 done
